@@ -1,46 +1,29 @@
 import asyncio
-from langchain_google_genai import ChatGoogleGenerativeAI
-from mcp_use import MCPClient, MCPAgent
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
-async def main():
-    # Define config to launch both MCP servers
-    config = {
-        "mcpServers": {
-            # Your custom FastMCP server
-            "web_extractor": {
-                "command": "python",
-                "args": ["mcp_server.py"]
-            },
-            # Playwright MCP tool
-            "playwright": {
-                "command": "npx",
-                "args": ["@playwright/mcp@latest"],
-                "env": {
-                    "DISPLAY": ":1"  # Needed for GUI apps in headless mode (Linux)
-                }
-            }
-        }
-    }
+# Command to run the server
+server_params = StdioServerParameters(
+    command="uv",  
+    args=["run", "mcp_server.py"],  
+    env=None
+)
 
-    # Create client from config
-    client = MCPClient.from_dict(config)
+async def run():
+    async with stdio_client(server_params) as (read, write): 
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            
+            tools = await session.list_tools()
+            print("Available tools:", tools)
 
-    # Create Gemini LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        api_key="YOUR_GEMINI_API_KEY"
-    )
-
-    # Create agent
-    agent = MCPAgent(llm=llm, client=client, max_steps=30)
-
-    # Run agent task that uses both tools
-    query = (
-        "Use a browser to search 'best food in Chennai'. "
-        "Open the top result and extract its content."
-    )
-    result = await agent.run(query, max_steps=30)
-    print("\nResult:", result)
+            # Call your server's tool
+            result = await session.call_tool(
+                "extract-web-page-content-tool",
+                arguments={"url": "https://en.wikipedia.org/wiki/A._P._J._Abdul_Kalam"}
+            )
+            
+            print("\nTool Output:\n", result)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run())
